@@ -211,6 +211,14 @@ class TelegramNotifier:
         await self._app.initialize()
         await self._app.start()
         await self._app.updater.start_polling(drop_pending_updates=True)
+        # Sync command menu in Telegram
+        from telegram import BotCommand
+        await self._app.bot.set_my_commands([
+            BotCommand("start",     "Головне меню"),
+            BotCommand("history",   "Історія угод"),
+            BotCommand("pnl",       "Загальний PnL"),
+            BotCommand("positions", "Відкриті позиції"),
+        ])
         logger.info("telegram | polling started")
 
     async def stop_polling(self):
