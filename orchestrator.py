@@ -94,6 +94,7 @@ async def main():
     telegram = TelegramNotifier()
     portfolio = Portfolio(executor, telegram, ai_filter, news_watcher, ws_stream)
 
+    await telegram.start_polling()
     await telegram.send("🤖 Trading bot started (PAPER mode)" if cfg.PAPER_TRADING else "🤖 Trading bot started (LIVE mode)")
 
     # Tick counters (base tick = PORTFOLIO_INTERVAL = 5s)
