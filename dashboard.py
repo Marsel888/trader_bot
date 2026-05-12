@@ -5,6 +5,8 @@
 Запуск:
     py dashboard.py
 """
+import asyncio
+import json
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -13,10 +15,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 import uvicorn
-from sqlalchemy import select
+from sqlalchemy import select, delete, func
 
 from src.database.db import init_db, AsyncSessionLocal
-from src.database.models import Trade, TradeStatus
+from src.database.models import Trade, TradeStatus, Candle
 from src.config import cfg
 
 
@@ -28,6 +30,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Торговий Бот", lifespan=lifespan)
 LOG_DIR = Path("logs")
+
+
+@app.post("/api/reset")
+async def api_reset():
+    """Delete all trades and reset to initial state."""
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(Trade))
+        await session.commit()
+    return {"ok": True, "message": f"Всі угоди видалено. Баланс скинуто до ${cfg.INITIAL_BALANCE:.0f}"}
 
 
 @app.get("/api/status")
@@ -56,12 +67,27 @@ async def api_stats():
         )
         open_trades = res2.scalars().all()
 
+        # Latest 1h candle price per coin from Candle table (updated every 60s by bot)
+        live_prices: dict[str, float] = {}
+        if open_trades:
+            coins = list({t.coin for t in open_trades})
+            for coin in coins:
+                row = await session.execute(
+                    select(Candle.close)
+                    .where(Candle.coin == coin, Candle.timeframe == "1h")
+                    .order_by(Candle.timestamp.desc())
+                    .limit(1)
+                )
+                val = row.scalar()
+                if val:
+                    live_prices[coin] = float(val)
+
     closed_pnl = sum(t.pnl_usd or 0 for t in closed)
     locked = sum(t.size_usd / (t.leverage or 5) for t in open_trades)
 
-    # Unrealized PnL — uses current_price saved by portfolio every minute
     def _float_pnl(t) -> float:
-        cur = t.current_price or t.entry_price
+        # Priority: live candle price → portfolio current_price → entry
+        cur = live_prices.get(t.coin) or t.current_price or t.entry_price
         coins = t.size_usd / t.entry_price if t.entry_price else 0
         if t.direction == "LONG":
             return (cur - t.entry_price) * coins
@@ -112,7 +138,7 @@ async def api_stats():
                 "coin": t.coin,
                 "direction": t.direction,
                 "entry": t.entry_price,
-                "cur": round(t.current_price or t.entry_price, 4),
+                "cur": round(live_prices.get(t.coin) or t.current_price or t.entry_price, 4),
                 "stop": t.stop_price,
                 "tp1": t.tp1_price,
                 "tp2": t.tp2_price,
@@ -139,6 +165,35 @@ async def api_stats():
             }
             for t in closed[:20]
         ],
+    }
+
+
+@app.get("/api/live_prices")
+async def api_live_prices():
+    """Latest live prices written by bot every 1s via WS stream."""
+    prices_file = Path("data/live_prices.json")
+    if not prices_file.exists():
+        return {"prices": {}, "ts": 0}
+    try:
+        return json.loads(prices_file.read_text())
+    except Exception:
+        return {"prices": {}, "ts": 0}
+
+
+@app.get("/api/prices")
+async def api_prices():
+    """Latest price for each coin from Candle table."""
+    async with AsyncSessionLocal() as session:
+        rows = await session.execute(
+            select(Candle.coin, Candle.close, Candle.timestamp)
+            .where(Candle.timeframe == "1h")
+            .order_by(Candle.coin, Candle.timestamp.desc())
+            .distinct(Candle.coin)
+        )
+        results = rows.all()
+    return {
+        row.coin: {"price": round(row.close, 6), "updated": row.timestamp.strftime("%H:%M")}
+        for row in results
     }
 
 
@@ -172,6 +227,8 @@ HTML = """<!DOCTYPE html>
   .dot-off { background: #f85149; box-shadow: 0 0 6px #f85149; }
   .muted { color: #8b949e; font-size: 11px; }
   .ml-auto { margin-left: auto; }
+  .btn-reset { background: #3a1a1a; color: #f85149; border: 1px solid #f85149; border-radius: 4px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .btn-reset:hover { background: #f85149; color: #fff; }
 
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 16px 20px; }
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0 20px 16px; }
@@ -218,7 +275,9 @@ HTML = """<!DOCTYPE html>
   <span class="dot" id="dot"></span>
   <span id="status-txt">перевірка...</span>
   <span class="muted" id="last-seen"></span>
-  <span class="muted ml-auto" id="timer">оновлення через 10с</span>
+  <span class="muted ml-auto" id="ws-age"></span>
+  <span class="muted" id="timer">оновлення через 10с</span>
+  <button class="btn-reset" onclick="resetBot()">🗑 Скинути</button>
 </div>
 
 <!-- Баланс -->
@@ -265,6 +324,12 @@ HTML = """<!DOCTYPE html>
   </div>
 </div>
 
+<!-- Тикер цін -->
+<div class="section">
+  <div class="section-title">Ринок (live)</div>
+  <div id="ticker" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+</div>
+
 <!-- Відкриті позиції -->
 <div class="section">
   <div class="section-title">Відкриті позиції</div>
@@ -298,7 +363,86 @@ HTML = """<!DOCTYPE html>
 
 <script>
 const INITIAL_BALANCE = __INITIAL_BALANCE__;
+const WATCHLIST = __WATCHLIST__;
 let secs = 10;
+
+// ── Binance Futures real-time prices ────────────────────────────
+const livePrices = {};
+
+function fmtPrice(p) {
+  if (!p) return '—';
+  return p < 0.01 ? p.toFixed(6) : p < 1 ? p.toFixed(5) : p < 100 ? p.toFixed(4) : p.toFixed(2);
+}
+
+const prevPrices = {};
+
+function updatePriceCells() {
+  // Update open position rows
+  document.querySelectorAll('[data-coin-price]').forEach(el => {
+    const symbol = el.getAttribute('data-coin-price');
+    if (livePrices[symbol] !== undefined) {
+      el.textContent = fmtPrice(livePrices[symbol]);
+    }
+  });
+
+  // Update ticker
+  const ticker = document.getElementById('ticker');
+  if (!ticker) return;
+  WATCHLIST.forEach(symbol => {
+    const price = livePrices[symbol];
+    const prev  = prevPrices[symbol];
+    prevPrices[symbol] = price;
+    let el = document.getElementById('tick-' + symbol);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'tick-' + symbol;
+      el.style.cssText = 'background:#161b22;border:1px solid #30363d;border-radius:4px;padding:4px 10px;font-size:12px;min-width:110px;text-align:center';
+      ticker.appendChild(el);
+    }
+    const color = !prev || price === prev ? '#c9d1d9' : price > prev ? '#3fb950' : '#f85149';
+    const name = symbol.replace('USDT','');
+    el.innerHTML = `<span style="color:#8b949e">${name}</span> <b style="color:${color}">${fmtPrice(price)}</b>`;
+  });
+}
+
+const WATCHLIST_SET = new Set(WATCHLIST);
+
+// Binance Futures REST — запитуємо ціни кожні 3 секунди напряму
+async function fetchBinancePrices() {
+  try {
+    const res = await fetch('https://fapi.binance.com/fapi/v1/ticker/price');
+    if (!res.ok) throw new Error(res.status);
+    const arr = await res.json();
+    let changed = false;
+    arr.forEach(item => {
+      if (WATCHLIST_SET.has(item.symbol)) {
+        livePrices[item.symbol] = parseFloat(item.price);
+        changed = true;
+      }
+    });
+    if (changed) updatePriceCells();
+    document.getElementById('ws-age').textContent = '🟢 live';
+  } catch(e) {
+    // Якщо Binance недоступний — беремо з нашого сервера
+    try {
+      const data = await fetch('/api/live_prices').then(r => r.json());
+      const ageSec = Math.round(Date.now() / 1000 - (data.ts || 0));
+      document.getElementById('ws-age').textContent = `🟡 ${ageSec}с тому`;
+      const prices = data.prices || {};
+      let changed = false;
+      Object.entries(prices).forEach(([coin, price]) => {
+        const symbol = coin.replace('/', '');
+        if (WATCHLIST_SET.has(symbol)) { livePrices[symbol] = price; changed = true; }
+      });
+      if (changed) updatePriceCells();
+    } catch(_) {
+      document.getElementById('ws-age').textContent = '🔴 офлайн';
+    }
+  }
+}
+
+setInterval(fetchBinancePrices, 3000);
+fetchBinancePrices();
 
 function pc(v) { return v >= 0 ? 'green' : 'red'; }
 function fmt(v) { return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2); }
@@ -366,7 +510,7 @@ async function refresh() {
         <td><b>${t.coin}</b></td>
         <td>${dirBadge(t.direction)}</td>
         <td>${t.entry.toFixed(4)}</td>
-        <td class="blue">${t.cur.toFixed(4)}</td>
+        <td class="blue" data-coin-price="${t.coin.replace('/','')}">${t.cur < 1 ? t.cur.toFixed(6) : t.cur < 100 ? t.cur.toFixed(4) : t.cur.toFixed(2)}</td>
         <td class="red">${t.stop.toFixed(4)}</td>
         <td class="green">${t.tp1.toFixed(4)}${t.tp1_hit?'<span class="tp1ok">BE</span>':''}</td>
         <td class="green">${t.tp2.toFixed(4)}</td>
@@ -419,6 +563,19 @@ setInterval(() => {
   if (secs <= 0) { secs = 10; refresh(); }
 }, 1000);
 
+
+async function resetBot() {
+  if (!confirm(`Скинути всі угоди і повернути баланс до $${INITIAL_BALANCE}?`)) return;
+  try {
+    const r = await fetch('/api/reset', { method: 'POST' });
+    const d = await r.json();
+    alert(d.message);
+    refresh();
+  } catch(e) {
+    alert('Помилка: ' + e);
+  }
+}
+
 refresh();
 </script>
 </body>
@@ -428,7 +585,10 @@ refresh();
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return HTMLResponse(content=HTML.replace("__INITIAL_BALANCE__", str(int(cfg.INITIAL_BALANCE))))
+    watchlist_js = str([c.replace("/", "") for c in cfg.WATCHLIST])
+    html = HTML.replace("__INITIAL_BALANCE__", str(int(cfg.INITIAL_BALANCE)))
+    html = html.replace("__WATCHLIST__", watchlist_js)
+    return HTMLResponse(content=html)
 
 
 if __name__ == "__main__":

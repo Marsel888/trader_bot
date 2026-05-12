@@ -126,7 +126,7 @@ BTC тренд: {mem.btc_trend}
 async def get_relevant_memories(
     coin: str,
     direction: str,
-    regime: str,
+    regime: str = "unknown",
     limit: int = 6,
 ) -> list[HermesMemory]:
     """Returns past memories relevant to the current signal."""

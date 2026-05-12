@@ -8,8 +8,11 @@ The bot runs in PAPER_TRADING mode by default (no real orders).
 Set PAPER_TRADING=false in .env only after successful paper validation.
 """
 import asyncio
+import json
 import sys
+import time
 from datetime import datetime, timezone
+from pathlib import Path
 from loguru import logger
 
 from src.config import cfg
@@ -49,6 +52,26 @@ logger.add(
 )
 
 
+async def _write_prices_loop(ws_stream: "WSPriceStream", price_cache_ref: list):
+    """Background task: writes live WS prices to file every 1s for dashboard."""
+    prices_path = Path("data/live_prices.json")
+    while True:
+        try:
+            live: dict[str, float] = {}
+            for coin in cfg.WATCHLIST:
+                ws_p = ws_stream.get_price(coin) if ws_stream.is_fresh(coin) else None
+                if ws_p:
+                    live[coin] = ws_p
+                else:
+                    df = price_cache_ref[0].get(coin, {}).get("1h")
+                    if df is not None and not df.empty:
+                        live[coin] = float(df["close"].iloc[-1])
+            prices_path.write_text(json.dumps({"prices": live, "ts": time.time()}))
+        except Exception:
+            pass
+        await asyncio.sleep(1)
+
+
 async def main():
     logger.info("=" * 60)
     logger.info(f"Trading Bot starting — PAPER={cfg.PAPER_TRADING}")
@@ -60,6 +83,8 @@ async def main():
     price_collector = PriceCollector()
     ws_stream = WSPriceStream()
     ws_stream.start()   # background task — real-time prices via WebSocket
+    price_cache_ref: list[dict] = [{}]  # mutable ref shared with price writer
+    asyncio.create_task(_write_prices_loop(ws_stream, price_cache_ref))
     news_watcher = NewsWatcher()
     signal_engine = SignalEngine()
     ai_filter = HermesFilter()
@@ -100,6 +125,9 @@ async def main():
 
             # 2. Portfolio stop/TP check every 5s (uses WS prices)
             await portfolio.update_positions(price_cache)
+
+            # Update shared price cache ref (used by background price writer)
+            price_cache_ref[0] = price_cache
 
             # 3. Emergency BTC check every 5s via WS
             btc_ws = ws_stream.get_price("BTC/USDT") if ws_stream.is_fresh("BTC/USDT") else None
