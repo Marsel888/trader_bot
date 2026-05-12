@@ -14,12 +14,19 @@ class Config:
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    # AI
+    # AI — OpenRouter (основний) або Ollama (локальний fallback)
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "nousresearch/hermes-4-70b")
+
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "hermes3:latest")
-    OLLAMA_NUM_GPU = int(os.getenv("OLLAMA_NUM_GPU", "99"))   # 99=GPU, 0=CPU-only
-    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))  # секунд; CPU: 300
+    OLLAMA_NUM_GPU = int(os.getenv("OLLAMA_NUM_GPU", "99"))
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+    @classmethod
+    def use_openrouter(cls) -> bool:
+        return bool(cls.OPENROUTER_API_KEY and cls.OPENROUTER_API_KEY != "none")
 
     # Trading parameters
     PAPER_TRADING = os.getenv("PAPER_TRADING", "true").lower() == "true"

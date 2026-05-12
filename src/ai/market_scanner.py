@@ -36,11 +36,15 @@ class AIMarketScanner:
             memories_summary=memories_summary,
         )
 
-        try:
-            result = await self._call_ollama(context)
-        except Exception as e:
-            logger.warning(f"ai_scanner | Ollama failed: {e} — trying Claude fallback")
-            result = None
+        result = None
+        if cfg.use_openrouter():
+            try:
+                from src.ai.openrouter_client import call_openrouter
+                result = await call_openrouter(SCANNER_SYSTEM_PROMPT, context, max_tokens=1024, temperature=0.2)
+                assert "signals" in result and isinstance(result["signals"], list)
+                logger.info(f"🌐 openrouter scanner | {len(result['signals'])} signal(s)")
+            except Exception as e:
+                logger.warning(f"ai_scanner | OpenRouter failed: {e} — trying Claude")
 
         if result is None and cfg.ANTHROPIC_API_KEY and cfg.ANTHROPIC_API_KEY != "none":
             try:

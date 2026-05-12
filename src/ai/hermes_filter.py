@@ -23,34 +23,35 @@ SAFE_FALLBACK = {
 class HermesFilter:
     async def evaluate(self, trade_context: str, timeout: int = cfg.OLLAMA_TIMEOUT,
                        signal=None, regime: str = "unknown") -> dict:
-        # Inject memory into context if signal provided
         if signal is not None:
-            memories = await get_relevant_memories(
-                coin=signal.coin,
-                direction=signal.direction,
-                regime=regime,
-            )
+            memories = await get_relevant_memories(coin=signal.coin, direction=signal.direction, regime=regime)
             if memories:
                 memory_block = format_memories_for_prompt(memories)
                 trade_context = trade_context.replace(
                     "МІЙ ДОСВІД (схожі минулі угоди):\n- Немає досвіду ще",
                     f"МІЙ ДОСВІД (схожі минулі угоди):\n{memory_block}",
                 )
-                logger.debug(f"🧠 hermes_memory | {len(memories)} memories loaded for {signal.coin}")
 
-        try:
-            return await self._call_ollama(trade_context, timeout)
-        except Exception as e:
-            logger.warning(f"hermes_filter | Ollama failed: {e} — trying Claude fallback")
+        return await self._call_ai(SYSTEM_PROMPT, trade_context, max_tokens=256)
+
+    async def _call_ai(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> dict:
+        """Call OpenRouter (primary) → Claude (fallback) → safe default."""
+        if cfg.use_openrouter():
+            try:
+                from src.ai.openrouter_client import call_openrouter
+                result = await call_openrouter(system_prompt, user_prompt, max_tokens=max_tokens)
+                self._validate(result)
+                logger.info(f"🌐 openrouter | {result.get('decision','?')} mult={result.get('size_multiplier','?')}")
+                return result
+            except Exception as e:
+                logger.warning(f"hermes_filter | OpenRouter failed: {e} — trying Claude")
 
         if cfg.ANTHROPIC_API_KEY and cfg.ANTHROPIC_API_KEY != "none":
             try:
                 from src.ai.claude_filter import ClaudeFilter
-                return await ClaudeFilter().evaluate(trade_context)
+                return await ClaudeFilter().evaluate(user_prompt)
             except Exception as e:
-                logger.warning(f"hermes_filter | Claude fallback failed: {e} — using hard fallback")
-        else:
-            logger.warning("hermes_filter | No Claude key — using safe default")
+                logger.warning(f"hermes_filter | Claude failed: {e}")
 
         return SAFE_FALLBACK
 
@@ -109,11 +110,15 @@ class HermesFilter:
             memories_by_signal=memories_by_signal,
         )
 
-        try:
-            result = await self._call_ollama_batch(context, timeout)
-        except Exception as e:
-            logger.warning(f"hermes_filter | batch Ollama failed: {e} — trying Claude fallback")
-            result = None
+        result = None
+        if cfg.use_openrouter():
+            try:
+                from src.ai.openrouter_client import call_openrouter
+                result = await call_openrouter(BATCH_SYSTEM_PROMPT, context, max_tokens=1024)
+                self._validate_batch(result)
+                logger.info(f"🌐 openrouter batch | regime={result.get('market_regime','?')} | {len(result.get('decisions',[]))} decisions")
+            except Exception as e:
+                logger.warning(f"hermes_filter | OpenRouter batch failed: {e} — trying Claude")
 
         if result is None and cfg.ANTHROPIC_API_KEY and cfg.ANTHROPIC_API_KEY != "none":
             try:
