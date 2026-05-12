@@ -1,0 +1,28 @@
+# Secrets — НІКОЛИ не заливати
+.env
+*.env
+
+# База даних
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Логи
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,32 @@
+# Core
+python-dotenv
+loguru
+
+# Database
+sqlalchemy
+aiosqlite
+
+# Exchange / market data
+ccxt
+pandas
+numpy
+
+# HTTP / async
+httpx
+aiohttp
+feedparser
+websockets
+
+# AI filter
+ollama
+anthropic
+
+# Telegram notifications
+python-telegram-bot
+
+# Dashboard
+fastapi
+uvicorn[standard]
+
+# Utilities
+python-dateutil

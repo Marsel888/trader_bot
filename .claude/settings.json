@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Recurse \"c:\\\\Users\\\\homePC\\\\Desktop\\\\trade_bot\\\\\" | Where-Object {!$_.PSIsContainer} | Select-Object -ExpandProperty FullName | Sort-Object)",
+      "PowerShell(python --version)",
+      "PowerShell(python3 --version)",
+      "PowerShell(py --version)",
+      "PowerShell(py -m pip index versions pandas 2>&1)",
+      "PowerShell(py -m pip install \"pandas>=3.0\" numpy 2>&1)",
+      "PowerShell(py -m pip install aiosqlite loguru python-dotenv httpx aiohttp feedparser ollama anthropic python-telegram-bot python-dateutil 2>&1)",
+      "PowerShell(py -m pip install ccxt 2>&1)",
+      "PowerShell(py -m pip install pandas-ta 2>&1)",
+      "PowerShell(*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\homePC\\Desktop\\trade_bot\\src",
+      "c:\\Users\\homePC\\.claude\\projects\\c--Users-homePC-Desktop-trade-bot\\memory"
+    ]
+  }
+}

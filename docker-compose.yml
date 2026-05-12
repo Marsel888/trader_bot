@@ -1,0 +1,35 @@
+services:
+
+  tradebot:
+    build: .
+    container_name: tradebot_app
+    env_file: .env
+    environment:
+      # host.docker.internal → Ollama на хост-машині
+      # На Linux Docker extra_hosts нижче робить цей hostname доступним
+      OLLAMA_HOST: http://host.docker.internal:11434
+      DATABASE_URL: sqlite+aiosqlite:////app/data/trading_bot.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux-сумісність (на Windows/Mac не шкодить)
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    container_name: tradebot_dashboard
+    entrypoint: ["python", "dashboard.py"]
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/trading_bot.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux-сумісність
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      - tradebot
+    restart: unless-stopped
