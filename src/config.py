@@ -33,8 +33,8 @@ class Config:
     INITIAL_BALANCE = float(os.getenv("INITIAL_BALANCE", "10000"))
     RISK_PER_TRADE = float(os.getenv("RISK_PER_TRADE", "0.01"))
     MAX_LEVERAGE = float(os.getenv("MAX_LEVERAGE", "5"))
-    MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "3"))
-    MAX_SAME_DIRECTION = int(os.getenv("MAX_SAME_DIRECTION", "2"))
+    MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "10"))
+    MAX_SAME_DIRECTION = int(os.getenv("MAX_SAME_DIRECTION", "5"))
 
     # Watchlist
     WATCHLIST = [s.strip() for s in os.getenv("WATCHLIST", "BTC/USDT,ETH/USDT,SOL/USDT").split(",")]
