@@ -6,7 +6,7 @@
 *.db
 *.db-shm
 *.db-wal
-data/
+/data/
 
 # Логи
 logs/
