@@ -40,7 +40,7 @@ class Config:
     WATCHLIST = [s.strip() for s in os.getenv("WATCHLIST", "BTC/USDT,ETH/USDT,SOL/USDT").split(",")]
 
     # Kill switches
-    MAX_DAILY_DRAWDOWN = float(os.getenv("MAX_DAILY_DRAWDOWN", "0.03"))
+    MAX_DAILY_DRAWDOWN = float(os.getenv("MAX_DAILY_DRAWDOWN", "0.15"))
     MAX_WEEKLY_DRAWDOWN = float(os.getenv("MAX_WEEKLY_DRAWDOWN", "0.10"))
     MAX_MONTHLY_DRAWDOWN = float(os.getenv("MAX_MONTHLY_DRAWDOWN", "0.15"))
     MAX_LOSS_STREAK = int(os.getenv("MAX_LOSS_STREAK", "3"))
