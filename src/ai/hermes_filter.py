@@ -114,7 +114,7 @@ class HermesFilter:
         if cfg.use_openrouter():
             try:
                 from src.ai.openrouter_client import call_openrouter
-                result = await call_openrouter(system=BATCH_SYSTEM_PROMPT, user=context, max_tokens=1024)
+                result = await call_openrouter(system=BATCH_SYSTEM_PROMPT, user=context, max_tokens=4096)
                 self._validate_batch(result)
                 logger.info(f"🌐 openrouter batch | regime={result.get('market_regime','?')} | {len(result.get('decisions',[]))} decisions")
             except Exception as e:
