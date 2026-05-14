@@ -136,7 +136,9 @@ class Portfolio:
                 locked=self._executor.total_locked,
             )
         from src.ai.hermes_memory import update_outcome, generate_lesson
+        from src.analytics.agent_log import update_evaluation_outcome
         await update_outcome(trade)
+        await update_evaluation_outcome(trade)
         asyncio.create_task(generate_lesson(trade))
 
     async def emergency_exit_all(self, price_cache: dict, reason: str):

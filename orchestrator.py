@@ -29,6 +29,7 @@ from src.risk.sizing import calculate_size
 from src.execution.paper_executor import PaperExecutor
 from src.execution.portfolio import Portfolio
 from src.analytics.metrics import get_stats, get_portfolio_state
+from src.analytics.agent_log import log_evaluation
 from src.notifications.telegram import TelegramNotifier
 
 # ─── Logging setup ────────────────────────────────────────────────
@@ -274,6 +275,14 @@ async def main():
                                     f"⏭  {sig.coin} {sig.direction} consensus failed ({votes}/3) | "
                                     f"vol: {vol_reason} | regime: {reg_reason}"
                                 )
+                                await log_evaluation(
+                                    signal=sig,
+                                    agent_a_vote=action, agent_a_reason=reason, agent_a_multiplier=size_mult,
+                                    agent_b_vote="take" if vol_ok else "skip", agent_b_reason=vol_reason,
+                                    agent_c_vote="take" if reg_ok else "skip", agent_c_reason=reg_reason,
+                                    consensus_votes=votes, taken=False, skip_reason="consensus_failed",
+                                    regime=regime, price_cache=price_cache,
+                                )
                                 continue
 
                             logger.info(f"🤖 {action.upper()} | {sig.coin} {sig.direction} [{sig.source}] | mult={size_mult:.1f} | {reason[:60]}")
@@ -309,6 +318,15 @@ async def main():
                             await save_decision(
                                 trade=trade, signal=sig, verdict=verdict_compat,
                                 adx_4h=_adx_val(df_4h), btc_trend=_simple_trend(df_btc_4h),
+                            )
+
+                            await log_evaluation(
+                                signal=sig,
+                                agent_a_vote=action, agent_a_reason=reason, agent_a_multiplier=size_mult,
+                                agent_b_vote="take" if vol_ok else "skip", agent_b_reason=vol_reason,
+                                agent_c_vote="take" if reg_ok else "skip", agent_c_reason=reg_reason,
+                                consensus_votes=votes, taken=True, trade_id=trade.id,
+                                regime=regime, price_cache=price_cache,
                             )
 
                             # Refresh portfolio state after each trade so next signal sees updated positions

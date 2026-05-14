@@ -142,6 +142,55 @@ class HermesMemory(Base):
     lesson = Column(Text, nullable=True)
 
 
+class SignalEvaluation(Base):
+    """
+    Logs every signal that reached the consensus stage (all 3 agents voted).
+    Used to analyze agent disagreement, accuracy, and consensus quality.
+    """
+    __tablename__ = "signal_evaluations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    coin = Column(String(20), nullable=False)
+    direction = Column(String(10), nullable=False)
+    source = Column(String(50), nullable=False)   # ai_scanner / trend_follower_v1 / breakout
+
+    # Signal data at evaluation time
+    entry = Column(Float, nullable=False)
+    stop = Column(Float, nullable=False)
+    tp2 = Column(Float, nullable=False)
+
+    # Agent A (Hermes) — from batch HermesFilter
+    agent_a_vote = Column(String(10), nullable=False)         # take / reduced / skip
+    agent_a_reason = Column(Text, nullable=True)
+    agent_a_multiplier = Column(Float, nullable=True)
+
+    # Agent B (DeepSeek) — volume/order flow
+    agent_b_vote = Column(String(10), nullable=False)         # take / skip
+    agent_b_reason = Column(Text, nullable=True)
+
+    # Agent C (Qwen) — macro/regime
+    agent_c_vote = Column(String(10), nullable=False)         # take / skip
+    agent_c_reason = Column(Text, nullable=True)
+
+    # Consensus result
+    consensus_votes = Column(Integer, nullable=False)         # 0..3
+    taken = Column(Boolean, default=False)                    # was trade actually opened?
+    trade_id = Column(Integer, nullable=True)                 # link to Trade if taken
+    skip_reason = Column(String(50), nullable=True)           # consensus_failed / portfolio_limit / other
+
+    # Market context snapshot
+    regime = Column(String(30), nullable=True)
+    btc_rsi_1h = Column(Float, nullable=True)
+    coin_rsi_1h = Column(Float, nullable=True)
+    breadth_pct = Column(Float, nullable=True)                # % of coins above EMA50
+
+    # Outcome (filled when trade closes — only if taken=True)
+    outcome = Column(String(20), nullable=True)               # win / loss / breakeven
+    pnl_r = Column(Float, nullable=True)
+
+
 class DailyStats(Base):
     __tablename__ = "daily_stats"
 
