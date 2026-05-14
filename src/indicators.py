@@ -62,3 +62,57 @@ def rsi(df: pd.DataFrame, length: int = 14) -> pd.Series:
     loss = (-delta.clip(upper=0)).ewm(span=length, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
+
+
+def macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Returns (MACD line, Signal line, Histogram)."""
+    ema_fast = df["close"].ewm(span=fast, adjust=False).mean()
+    ema_slow = df["close"].ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def bollinger(df: pd.DataFrame, length: int = 20, std: float = 2.0) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Returns (upper band, middle band, lower band)."""
+    middle = df["close"].rolling(length).mean()
+    sigma = df["close"].rolling(length).std()
+    return middle + std * sigma, middle, middle - std * sigma
+
+
+def vwap(df: pd.DataFrame) -> pd.Series:
+    """Intraday VWAP from start of DataFrame (use last 24 bars for daily VWAP)."""
+    typical = (df["high"] + df["low"] + df["close"]) / 3
+    cum_vol = df["volume"].cumsum()
+    cum_tp_vol = (typical * df["volume"]).cumsum()
+    return cum_tp_vol / cum_vol.replace(0, np.nan)
+
+
+def candle_patterns(df: pd.DataFrame) -> list[str]:
+    """Detect last-bar candlestick patterns. Returns list of pattern names."""
+    if len(df) < 2:
+        return []
+    patterns = []
+    o, h, l, c = df["open"].iloc[-1], df["high"].iloc[-1], df["low"].iloc[-1], df["close"].iloc[-1]
+    po, ph, pl, pc = df["open"].iloc[-2], df["high"].iloc[-2], df["low"].iloc[-2], df["close"].iloc[-2]
+    body = abs(c - o)
+    full_range = h - l if h != l else 0.0001
+    upper_shadow = h - max(o, c)
+    lower_shadow = min(o, c) - l
+
+    if body / full_range < 0.1:
+        patterns.append("doji")
+    if lower_shadow > 2 * body and upper_shadow < body and c > o:
+        patterns.append("hammer")
+    if upper_shadow > 2 * body and lower_shadow < body and c < o:
+        patterns.append("shooting_star")
+    if c > po and o < pc and c > o:
+        patterns.append("bullish_engulfing")
+    if c < po and o > pc and c < o:
+        patterns.append("bearish_engulfing")
+    if c > o and c > ph:
+        patterns.append("breakout_candle_up")
+    if c < o and c < pl:
+        patterns.append("breakout_candle_down")
+    return patterns
