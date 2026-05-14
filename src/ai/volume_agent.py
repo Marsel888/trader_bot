@@ -1,51 +1,72 @@
 """
-Volume & Momentum Agent — rule-based vote on trade signals.
-
-Votes "take" when volume and momentum confirm the signal direction.
-No AI calls — fast and deterministic.
+Agent B — Volume & Momentum Analyst.
+Independent AI that evaluates signals based purely on volume and price momentum.
+Votes "take" or "skip" for each proposed signal.
 """
 from loguru import logger
-from src.indicators import ema as _ema
+from src.ai.openrouter_client import call_openrouter
 
 
-def vote(signal, price_cache: dict) -> bool:
-    """Returns True if volume/momentum confirms the signal."""
+_SYSTEM = """You are a crypto volume and momentum analyst.
+Your job: decide if a trade signal is supported by volume and price momentum.
+You ONLY look at volume patterns and momentum — ignore trend/fundamentals.
+Respond ONLY with valid JSON: {"vote": "take" or "skip", "reason": "1 short sentence"}"""
+
+
+def _build_prompt(signal, price_cache: dict) -> str:
     coin = signal.coin
-    direction = signal.direction
-
     df_1h = price_cache.get(coin, {}).get("1h")
-    df_4h = price_cache.get(coin, {}).get("4h")
 
-    if df_1h is None or len(df_1h) < 20:
-        logger.debug(f"volume_agent | {coin}: no 1h data — abstain")
-        return True  # abstain = don't block
+    vol_data = "no data"
+    momentum_data = "no data"
 
-    # ── 1. Volume confirmation ───────────────────────────────────────
-    vol_sma = df_1h["volume"].rolling(20).mean().iloc[-1]
-    vol_last = df_1h["volume"].iloc[-1]
-    volume_ok = vol_last > vol_sma * 1.1  # at least 10% above average
+    if df_1h is not None and len(df_1h) >= 20:
+        vol_last = df_1h["volume"].iloc[-1]
+        vol_avg = df_1h["volume"].rolling(20).mean().iloc[-1]
+        vol_ratio = vol_last / vol_avg if vol_avg else 1.0
 
-    # ── 2. Momentum (rate of change over 5 bars) ────────────────────
-    if len(df_1h) >= 6:
-        roc = (df_1h["close"].iloc[-1] - df_1h["close"].iloc[-6]) / df_1h["close"].iloc[-6]
-        momentum_ok = (roc > 0 and direction == "LONG") or (roc < 0 and direction == "SHORT")
-    else:
-        momentum_ok = True  # abstain
+        # Volume on up vs down candles (last 10 bars)
+        last10 = df_1h.tail(10)
+        up_vol   = last10[last10["close"] > last10["open"]]["volume"].sum()
+        down_vol = last10[last10["close"] < last10["open"]]["volume"].sum()
 
-    # ── 3. 4h EMA trend alignment ───────────────────────────────────
-    trend_ok = True
-    if df_4h is not None and len(df_4h) >= 50:
-        ema50 = _ema(df_4h, 50).iloc[-1]
-        close_4h = df_4h["close"].iloc[-1]
-        if direction == "LONG":
-            trend_ok = close_4h > ema50
-        else:
-            trend_ok = close_4h < ema50
+        # Price change over last 5 bars
+        price_chg_5 = (df_1h["close"].iloc[-1] - df_1h["close"].iloc[-6]) / df_1h["close"].iloc[-6] * 100
 
-    result = volume_ok and (momentum_ok or trend_ok)
-    logger.debug(
-        f"volume_agent | {coin} {direction} | "
-        f"vol={'✓' if volume_ok else '✗'} mom={'✓' if momentum_ok else '✗'} "
-        f"trend={'✓' if trend_ok else '✗'} → {'TAKE' if result else 'SKIP'}"
-    )
-    return result
+        vol_data = (
+            f"Current volume: {vol_last:.0f} ({vol_ratio:.1f}x avg)\n"
+            f"Up-candle volume (10 bars): {up_vol:.0f}\n"
+            f"Down-candle volume (10 bars): {down_vol:.0f}"
+        )
+        momentum_data = f"Price change last 5h: {price_chg_5:+.2f}%"
+
+    return f"""Trade signal to evaluate:
+Coin: {signal.coin} | Direction: {signal.direction}
+Entry: {signal.entry:.4f} | Stop: {signal.suggested_stop:.4f} | TP: {signal.suggested_tp2:.4f}
+
+Volume data (1h):
+{vol_data}
+
+Momentum:
+{momentum_data}
+
+Should we take this trade based on volume/momentum? Vote "take" or "skip"."""
+
+
+async def vote(signal, price_cache: dict) -> tuple[bool, str]:
+    """Returns (True=take, reason)."""
+    prompt = _build_prompt(signal, price_cache)
+    try:
+        result = await call_openrouter(
+            system=_SYSTEM,
+            user=prompt,
+            temperature=0.2,
+            max_tokens=80,
+        )
+        decision = result.get("vote", "skip").lower()
+        reason = result.get("reason", "")
+        logger.debug(f"agent_b | {signal.coin} {signal.direction} → {decision} | {reason}")
+        return decision == "take", reason
+    except Exception as e:
+        logger.warning(f"agent_b | {signal.coin} error: {e} — abstain (take)")
+        return True, "abstain"
