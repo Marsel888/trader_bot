@@ -146,7 +146,7 @@ def _reply_keyboard() -> "ReplyKeyboardMarkup":
     return ReplyKeyboardMarkup(
         [[KeyboardButton("📋 Історія"), KeyboardButton("💰 PnL"), KeyboardButton("📍 Позиції")]],
         resize_keyboard=True,
-        persistent=True,
+        is_persistent=True,
     )
 
 
@@ -212,7 +212,14 @@ class TelegramNotifier:
     def __init__(self):
         self._app: "Application | None" = None
 
-        if not (_TELEGRAM_AVAILABLE and cfg.TELEGRAM_BOT_TOKEN and cfg.TELEGRAM_CHAT_ID):
+        if not _TELEGRAM_AVAILABLE:
+            logger.warning("telegram | python-telegram-bot не встановлено")
+            return
+        if not cfg.TELEGRAM_BOT_TOKEN:
+            logger.warning("telegram | TELEGRAM_BOT_TOKEN відсутній в .env — бот вимкнено")
+            return
+        if not cfg.TELEGRAM_CHAT_ID:
+            logger.warning("telegram | TELEGRAM_CHAT_ID відсутній в .env — бот вимкнено")
             return
 
         self._chat_id = cfg.TELEGRAM_CHAT_ID
