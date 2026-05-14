@@ -269,7 +269,7 @@ async def main():
                                 f"A(tech)=✓ B(vol)={'✓' if vol_ok else '✗'} C(regime)={'✓' if reg_ok else '✗'} "
                                 f"→ {votes}/3"
                             )
-                            if votes < 2:
+                            if votes < 3:
                                 logger.warning(
                                     f"⏭  {sig.coin} {sig.direction} consensus failed ({votes}/3) | "
                                     f"vol: {vol_reason} | regime: {reg_reason}"
