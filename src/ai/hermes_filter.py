@@ -39,7 +39,7 @@ class HermesFilter:
         if cfg.use_openrouter():
             try:
                 from src.ai.openrouter_client import call_openrouter
-                result = await call_openrouter(system_prompt, user_prompt, max_tokens=max_tokens)
+                result = await call_openrouter(system=system_prompt, user=user_prompt, max_tokens=max_tokens)
                 self._validate(result)
                 logger.info(f"🌐 openrouter | {result.get('decision','?')} mult={result.get('size_multiplier','?')}")
                 return result
@@ -114,7 +114,7 @@ class HermesFilter:
         if cfg.use_openrouter():
             try:
                 from src.ai.openrouter_client import call_openrouter
-                result = await call_openrouter(BATCH_SYSTEM_PROMPT, context, max_tokens=1024)
+                result = await call_openrouter(system=BATCH_SYSTEM_PROMPT, user=context, max_tokens=1024)
                 self._validate_batch(result)
                 logger.info(f"🌐 openrouter batch | regime={result.get('market_regime','?')} | {len(result.get('decisions',[]))} decisions")
             except Exception as e:

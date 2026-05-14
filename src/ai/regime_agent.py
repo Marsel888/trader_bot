@@ -10,6 +10,8 @@ from src.indicators import ema as _ema
 from src.config import cfg
 
 
+MODEL = "qwen/qwen-2.5-72b-instruct"
+
 _SYSTEM = """You are a crypto macro market analyst.
 Your job: decide if market conditions are right for a trade based on the OVERALL market — not the specific coin.
 You look at BTC trend, market breadth, general sentiment.
@@ -69,6 +71,7 @@ async def vote(signal, price_cache: dict) -> tuple[bool, str]:
         result = await call_openrouter(
             system=_SYSTEM,
             user=prompt,
+            model=MODEL,
             temperature=0.2,
             max_tokens=80,
         )

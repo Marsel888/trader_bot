@@ -40,7 +40,7 @@ class AIMarketScanner:
         if cfg.use_openrouter():
             try:
                 from src.ai.openrouter_client import call_openrouter
-                result = await call_openrouter(SCANNER_SYSTEM_PROMPT, context, max_tokens=1024, temperature=0.2)
+                result = await call_openrouter(system=SCANNER_SYSTEM_PROMPT, user=context, max_tokens=1024, temperature=0.2)
                 assert "signals" in result and isinstance(result["signals"], list)
                 logger.info(f"🌐 openrouter scanner | {len(result['signals'])} signal(s)")
             except Exception as e:

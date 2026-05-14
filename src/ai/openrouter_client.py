@@ -1,6 +1,9 @@
 """
-OpenRouter API client — OpenAI-compatible, supports Hermes 70B and others.
-Used as primary AI provider when OPENROUTER_API_KEY is set.
+OpenRouter API client — supports multiple models via single API key.
+
+Agent A (Technical): nousresearch/hermes-4-70b
+Agent B (Volume):    deepseek/deepseek-chat
+Agent C (Regime):    qwen/qwen-2.5-72b-instruct
 """
 import json
 import httpx
@@ -12,15 +15,18 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 async def call_openrouter(
-    system_prompt: str,
-    user_prompt: str,
+    system: str,
+    user: str,
+    model: str | None = None,
     max_tokens: int = 1024,
     temperature: float = 0.1,
 ) -> dict:
     """
     Call OpenRouter API and return parsed JSON response.
-    Raises on network error or invalid JSON.
+    model=None → uses cfg.OPENROUTER_MODEL (default: hermes-4-70b).
     """
+    model_id = model or cfg.OPENROUTER_MODEL
+
     headers = {
         "Authorization": f"Bearer {cfg.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -29,10 +35,10 @@ async def call_openrouter(
     }
 
     payload = {
-        "model": cfg.OPENROUTER_MODEL,
+        "model": model_id,
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
         ],
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -47,9 +53,7 @@ async def call_openrouter(
     raw = data["choices"][0]["message"]["content"]
     result = json.loads(raw)
 
-    model_used = data.get("model", cfg.OPENROUTER_MODEL)
     usage = data.get("usage", {})
-    tokens = usage.get("total_tokens", "?")
-    logger.debug(f"openrouter | model={model_used} | tokens={tokens}")
+    logger.debug(f"openrouter | {model_id} | tokens={usage.get('total_tokens', '?')}")
 
     return result

@@ -7,6 +7,8 @@ from loguru import logger
 from src.ai.openrouter_client import call_openrouter
 
 
+MODEL = "deepseek/deepseek-chat"
+
 _SYSTEM = """You are a crypto volume and momentum analyst.
 Your job: decide if a trade signal is supported by volume and price momentum.
 You ONLY look at volume patterns and momentum — ignore trend/fundamentals.
@@ -60,6 +62,7 @@ async def vote(signal, price_cache: dict) -> tuple[bool, str]:
         result = await call_openrouter(
             system=_SYSTEM,
             user=prompt,
+            model=MODEL,
             temperature=0.2,
             max_tokens=80,
         )
