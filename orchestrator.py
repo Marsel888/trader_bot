@@ -24,6 +24,7 @@ from src.signals.signal_engine import SignalEngine
 from src.ai.hermes_filter import HermesFilter
 from src.ai.market_scanner import AIMarketScanner
 from src.ai.prompts import build_batch_context
+from src.ai import volume_agent, regime_agent
 from src.risk.sizing import calculate_size
 from src.execution.paper_executor import PaperExecutor
 from src.execution.portfolio import Portfolio
@@ -250,6 +251,20 @@ async def main():
                                     logger.warning(f"🤖 AI SKIP | {sig.coin} {sig.direction} | {reason}")
                                     await telegram.notify_signal_skipped(sig.coin, sig.direction, [reason])
                                     continue
+
+                            # ── Consensus: 2 of 3 agents must agree ────────────
+                            vote_ai = 1  # AI scanner/filter already said "take"
+                            vote_vol = 1 if volume_agent.vote(sig, price_cache) else 0
+                            vote_reg = 1 if regime_agent.vote(sig, price_cache) else 0
+                            votes = vote_ai + vote_vol + vote_reg
+                            logger.info(
+                                f"🗳  consensus | {sig.coin} {sig.direction} | "
+                                f"AI=✓ vol={'✓' if vote_vol else '✗'} regime={'✓' if vote_reg else '✗'} "
+                                f"→ {votes}/3"
+                            )
+                            if votes < 2:
+                                logger.warning(f"⏭  {sig.coin} {sig.direction} consensus failed ({votes}/3)")
+                                continue
 
                             logger.info(f"🤖 {action.upper()} | {sig.coin} {sig.direction} [{sig.source}] | mult={size_mult:.1f} | {reason[:60]}")
 

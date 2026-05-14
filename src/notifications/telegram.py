@@ -16,11 +16,13 @@ from src.database.db import AsyncSessionLocal
 from src.database.models import Trade, TradeStatus
 
 try:
-    from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+    from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup, KeyboardButton
     from telegram.ext import (
         Application,
         CommandHandler,
         CallbackQueryHandler,
+        MessageHandler,
+        filters,
         ContextTypes,
     )
     _TELEGRAM_AVAILABLE = True
@@ -139,14 +141,37 @@ def _main_keyboard() -> "InlineKeyboardMarkup":
     ])
 
 
+def _reply_keyboard() -> "ReplyKeyboardMarkup":
+    """Persistent keyboard always visible at the bottom of the chat."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("📋 Історія"), KeyboardButton("💰 PnL"), KeyboardButton("📍 Позиції")]],
+        resize_keyboard=True,
+        persistent=True,
+    )
+
+
 # ── Handler functions ────────────────────────────────────────────────
 
 async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 <b>Торговий Бот</b>\nОберіть дію:",
         parse_mode="HTML",
-        reply_markup=_main_keyboard(),
+        reply_markup=_reply_keyboard(),
     )
+
+
+async def _handle_reply_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles persistent keyboard button presses."""
+    text = update.message.text
+    if text == "📋 Історія":
+        msg = await _history_text()
+    elif text == "💰 PnL":
+        msg = await _pnl_text()
+    elif text == "📍 Позиції":
+        msg = await _positions_text()
+    else:
+        return
+    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=_main_keyboard())
 
 
 async def _cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -201,6 +226,7 @@ class TelegramNotifier:
         self._app.add_handler(CommandHandler("pnl", _cmd_pnl))
         self._app.add_handler(CommandHandler("positions", _cmd_positions))
         self._app.add_handler(CallbackQueryHandler(_on_button))
+        self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_reply_buttons))
 
     # ── Lifecycle ────────────────────────────────────────────────────
 

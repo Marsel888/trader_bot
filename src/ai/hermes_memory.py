@@ -64,7 +64,7 @@ async def update_outcome(trade: Trade):
             logger.debug(f"hermes_memory | outcome for trade #{trade.id}: {outcome} ({trade.r_multiple:+.2f}R)")
 
 
-async def generate_lesson(trade: Trade, ollama_model: str, ollama_host: str):
+async def generate_lesson(trade: Trade, ollama_model: str = "", ollama_host: str = ""):
     """Asks Hermes to reflect on its decision after seeing the result."""
     if trade.r_multiple is None:
         return
@@ -93,22 +93,13 @@ BTC тренд: {mem.btc_trend}
 Відповідай ТІЛЬКИ JSON: {{"lesson": "текст уроку"}}"""
 
     try:
-        import asyncio
-        import ollama
-
-        client = ollama.Client(host=ollama_host)
-
-        def _call():
-            return client.chat(
-                model=ollama_model,
-                messages=[{"role": "user", "content": prompt}],
-                format="json",
-                options={"temperature": 0.3, "num_predict": 128, "num_gpu": cfg.OLLAMA_NUM_GPU},
-            )
-
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, _call)
-        data = json.loads(response["message"]["content"])
+        from src.ai.openrouter_client import call_openrouter
+        data = await call_openrouter(
+            system="Ти торговий бот що вчиться на своїх угодах. Відповідай тільки валідним JSON.",
+            user=prompt,
+            temperature=0.3,
+            max_tokens=128,
+        )
         lesson = data.get("lesson", "").strip()
 
         if lesson:

@@ -148,7 +148,7 @@ async def api_stats():
                 "float_pnl": round(_float_pnl(t), 2),
                 "tp1_hit": t.tp1_hit,
                 "ai": t.ai_decision,
-                "opened": t.created_at.strftime("%d.%m %H:%M") if t.created_at else "-",
+                "opened": (t.created_at.strftime("%d.%m %H:%M") + " UTC") if t.created_at else "-",
             }
             for t in open_trades
         ],
@@ -161,7 +161,7 @@ async def api_stats():
                 "size": round(t.size_usd, 0),
                 "pnl": round(t.pnl_usd or 0, 2),
                 "r": round(t.r_multiple or 0, 2),
-                "closed": t.closed_at.strftime("%d.%m %H:%M") if t.closed_at else "-",
+                "closed": (t.closed_at.strftime("%d.%m %H:%M") + " UTC") if t.closed_at else "-",
             }
             for t in closed[:20]
         ],

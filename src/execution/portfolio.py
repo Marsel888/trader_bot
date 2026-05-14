@@ -3,6 +3,7 @@ Portfolio manager — monitors open positions every minute.
 Handles: SL hit, TP1/TP2, breakeven, trailing stop, time-based exit, emergency exit.
 Also runs event-driven Hermes exit checks (max 1 per tick, 20-min cooldown per trade).
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 from sqlalchemy import select
@@ -136,13 +137,7 @@ class Portfolio:
             )
         from src.ai.hermes_memory import update_outcome, generate_lesson
         await update_outcome(trade)
-        if self._ai_filter is not None:
-            import asyncio
-            asyncio.create_task(generate_lesson(
-                trade,
-                ollama_model=cfg.OLLAMA_MODEL,
-                ollama_host=cfg.OLLAMA_HOST,
-            ))
+        asyncio.create_task(generate_lesson(trade))
 
     async def emergency_exit_all(self, price_cache: dict, reason: str):
         open_trades = await self._get_open_trades()

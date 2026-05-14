@@ -150,19 +150,13 @@ async def hermes_exit_decision(
     )
 
     try:
-        import ollama
-
-        def _call():
-            return ollama.chat(
-                model=cfg.OLLAMA_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                format="json",
-                options={"temperature": 0.1, "num_predict": 128, "num_gpu": cfg.OLLAMA_NUM_GPU},
-            )
-
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, _call)
-        result = json.loads(response["message"]["content"])
+        from src.ai.openrouter_client import call_openrouter
+        result = await call_openrouter(
+            system="You are a risk manager. Respond only with valid JSON.",
+            user=prompt,
+            temperature=0.1,
+            max_tokens=128,
+        )
         action = result.get("action", "hold")
         reason = result.get("reason", "")
         icon = "🚪" if action == "close" else "🤝"
@@ -170,5 +164,5 @@ async def hermes_exit_decision(
         return {"action": action, "reason": reason}
 
     except Exception as e:
-        logger.warning(f"hermes_exit | Ollama error for #{trade.id}: {e} — defaulting to hold")
+        logger.warning(f"hermes_exit | AI error for #{trade.id}: {e} — defaulting to hold")
         return {"action": "hold", "reason": f"AI недоступний: {e}"}

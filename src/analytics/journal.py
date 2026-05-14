@@ -67,7 +67,9 @@ async def record_close(
 
         coins = db_trade.size_usd / db_trade.entry_price
         db_trade.pnl_usd = round(pnl_per_unit * coins, 2)
-        db_trade.r_multiple = round(pnl_per_unit / db_trade.risk_distance, 3) if db_trade.risk_distance else 0
+        # Use risk_usd (fixed at open) to avoid -R bug when trailing stop moves above entry
+        risk_per_coin = db_trade.risk_usd / coins if coins else 0
+        db_trade.r_multiple = round(pnl_per_unit / risk_per_coin, 3) if risk_per_coin else 0
 
         if post_analysis:
             db_trade.post_analysis = post_analysis
