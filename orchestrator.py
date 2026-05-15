@@ -255,7 +255,6 @@ async def main():
                                 reason = dec.get("reason", sig.reason)
                                 if action == "skip":
                                     logger.warning(f"🤖 AI SKIP | {sig.coin} {sig.direction} | {reason}")
-                                    await telegram.notify_signal_skipped(sig.coin, sig.direction, [reason])
                                     continue
 
                             # ── Consensus: 2 of 3 AI agents must agree ─────────
