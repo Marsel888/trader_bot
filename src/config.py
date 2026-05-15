@@ -95,7 +95,16 @@ class Config:
     TP2_R = 2.0
     TP1_CLOSE_FRACTION = 0.5
     TP2_CLOSE_FRACTION = 0.25
-    TRAILING_ATR_MULTIPLIER = 2.0
+    TRAILING_ATR_MULTIPLIER = 1.0   # tighter trailing (was 2.0)
+
+    # Active trailing — move stop to breakeven once profit reaches this R
+    EARLY_BREAKEVEN_R = 0.5
+
+    # Pullback entry — distance to key level (EMA50 / breakout) in ATR units
+    PULLBACK_MAX_DISTANCE_ATR = 1.0   # entry must be within 1×ATR of trigger level
+
+    # Time-of-day filter — UTC hours when bot SKIPS new entries (low-liquidity Asian session)
+    SKIP_HOURS_UTC = {0, 1, 2, 3, 4, 5}
 
     # Time-based exit: 24h without +1R move
     TIME_EXIT_HOURS = 24

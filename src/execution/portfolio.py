@@ -195,7 +195,26 @@ class Portfolio:
             await self._close_and_learn(db_trade, price, TradeStatus.CLOSED_SL)
             return
 
-        # TP1 — move stop to breakeven
+        # Early breakeven — at +EARLY_BREAKEVEN_R move stop to entry (no-loss zone)
+        if not db_trade.breakeven_set:
+            r_dist = abs(db_trade.entry_price - db_trade.stop_price)
+            if r_dist > 0:
+                profit_r = ((price - db_trade.entry_price) / r_dist) if is_long \
+                    else ((db_trade.entry_price - price) / r_dist)
+                if profit_r >= cfg.EARLY_BREAKEVEN_R:
+                    async with AsyncSessionLocal() as session:
+                        t = await session.get(Trade, db_trade.id)
+                        if t and not t.breakeven_set:
+                            t.breakeven_set = True
+                            t.stop_price = t.entry_price
+                            await session.commit()
+                    logger.info(
+                        f"🛡 EARLY BREAKEVEN #{db_trade.id} {db_trade.coin} @ {price:.4f} "
+                        f"(+{profit_r:.2f}R) — stop moved to entry"
+                    )
+                    return
+
+        # TP1 — partial close + ensure breakeven (in case early breakeven didn't fire)
         if not db_trade.tp1_hit:
             if (is_long and price >= db_trade.tp1_price) or (not is_long and price <= db_trade.tp1_price):
                 async with AsyncSessionLocal() as session:
@@ -209,31 +228,33 @@ class Portfolio:
                 logger.info(f"portfolio | TP1 #{db_trade.id} {db_trade.coin} @ {price} — breakeven set")
                 return
 
-        # TP2 + trailing
+        # TP2 — full exit
         if db_trade.tp1_hit:
             if (is_long and price >= db_trade.tp2_price) or (not is_long and price <= db_trade.tp2_price):
                 logger.success(f"🟢 TP2 HIT #{db_trade.id} {db_trade.coin} @ {price:.4f}")
                 await self._close_and_learn(db_trade, price, TradeStatus.CLOSED_TP2)
                 return
 
-            if atr_val > 0:
-                hwm = db_trade.high_watermark or price
-                new_trail = (hwm - cfg.TRAILING_ATR_MULTIPLIER * atr_val) if is_long \
-                    else (hwm + cfg.TRAILING_ATR_MULTIPLIER * atr_val)
-                effective = max(db_trade.stop_price, new_trail) if is_long \
-                    else min(db_trade.stop_price, new_trail)
+        # Active trailing — starts after breakeven (which fires at +0.5R or TP1)
+        # Tighter trailing (1×ATR) keeps profit close once trade moves in our favor.
+        if db_trade.breakeven_set and atr_val > 0:
+            hwm = db_trade.high_watermark or price
+            new_trail = (hwm - cfg.TRAILING_ATR_MULTIPLIER * atr_val) if is_long \
+                else (hwm + cfg.TRAILING_ATR_MULTIPLIER * atr_val)
+            effective = max(db_trade.stop_price, new_trail) if is_long \
+                else min(db_trade.stop_price, new_trail)
 
-                async with AsyncSessionLocal() as session:
-                    t = await session.get(Trade, db_trade.id)
-                    if t:
-                        t.trailing_stop = effective
-                        t.stop_price = effective
-                        await session.commit()
+            async with AsyncSessionLocal() as session:
+                t = await session.get(Trade, db_trade.id)
+                if t:
+                    t.trailing_stop = effective
+                    t.stop_price = effective
+                    await session.commit()
 
-                if (is_long and price <= effective) or (not is_long and price >= effective):
-                    logger.info(f"📉 TRAIL STOP #{db_trade.id} {db_trade.coin} @ {price:.4f}")
-                    await self._close_and_learn(db_trade, price, TradeStatus.CLOSED_TRAILING)
-                    return
+            if (is_long and price <= effective) or (not is_long and price >= effective):
+                logger.info(f"📉 TRAIL STOP #{db_trade.id} {db_trade.coin} @ {price:.4f}")
+                await self._close_and_learn(db_trade, price, TradeStatus.CLOSED_TRAILING)
+                return
 
         # Time-based exit
         if db_trade.created_at:

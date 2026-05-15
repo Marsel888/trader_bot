@@ -179,6 +179,8 @@ async def main():
                 if drawdown_today <= -cfg.MAX_DAILY_DRAWDOWN:
                     logger.warning(f"🛑 KILL SWITCH — daily drawdown {drawdown_today*100:.1f}%")
                     await telegram.notify_kill_switch(f"Daily drawdown {drawdown_today*100:.1f}% reached — no new trades today")
+                elif now.hour in cfg.SKIP_HOURS_UTC:
+                    logger.info(f"🌙 quiet hours ({now.hour:02d}:00 UTC) — skip new entries (low-liquidity Asian session)")
                 else:
                     from src.ai.hermes_memory import save_decision
                     from src.ai.prompts import _adx_val, _simple_trend
