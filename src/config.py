@@ -64,7 +64,7 @@ class Config:
     ADX_PERIOD = 14
     ADX_THRESHOLD = 18
     ATR_PERIOD = 14
-    ATR_STOP_MULTIPLIER = 0.5   # stop distance = ATR × this (0.5=tight, 1.5=wide)
+    ATR_STOP_MULTIPLIER = 1.5   # stop distance = ATR × this (0.5=tight, 1.5=wide)
 
     # ATR extremal multiplier (>2x avg = skip)
     ATR_EXTREME_MULTIPLIER = 2.0
