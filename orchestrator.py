@@ -287,7 +287,7 @@ async def main():
 
                             logger.info(f"🤖 {action.upper()} | {sig.coin} {sig.direction} [{sig.source}] | mult={size_mult:.1f} | {reason[:60]}")
 
-                            size_info = calculate_size(sig, executor.balance, size_mult)
+                            size_info = calculate_size(sig, executor.total_equity, size_mult)
                             if size_info["size_usd"] == 0:
                                 logger.warning(f"⚠️  zero size for {sig.coin}, skipping")
                                 continue
