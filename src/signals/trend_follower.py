@@ -94,19 +94,6 @@ class TrendFollower:
 
         signals = []
 
-        # Pullback filter — entry must be within N×ATR of EMA_FAST (trigger zone)
-        # Avoids buying tops / shorting bottoms when price has already extended.
-        distance_to_ema = abs(close - curr_fast)
-        max_distance = cfg.PULLBACK_MAX_DISTANCE_ATR * last_atr
-        is_pullback_zone = distance_to_ema <= max_distance
-
-        if not is_pullback_zone:
-            logger.debug(
-                f"trend | {coin} [{tf}] | distance to EMA{cfg.EMA_FAST}={distance_to_ema:.4f} "
-                f"> {max_distance:.4f} ({cfg.PULLBACK_MAX_DISTANCE_ATR}×ATR) — extended, skip"
-            )
-            return []
-
         if golden_cross and last_adx >= adx_min and last_dmp > last_dmn:
             stop = close - cfg.ATR_STOP_MULTIPLIER * last_atr
             tp1 = close + cfg.TP1_R * (close - stop)
@@ -116,7 +103,7 @@ class TrendFollower:
                 coin=coin, direction="LONG",
                 entry=close, suggested_stop=stop, suggested_tp1=tp1, suggested_tp2=tp2,
                 confidence=conf,
-                reason=f"[{tf}] Pullback to EMA{cfg.EMA_FAST}, golden cross, ADX={last_adx:.1f}",
+                reason=f"[{tf}] EMA{cfg.EMA_FAST} golden cross, ADX={last_adx:.1f}",
                 source=self.name, atr=last_atr, adx=last_adx, extra={"vol_ok": vol_ok, "tf": tf},
             ))
 
@@ -129,7 +116,7 @@ class TrendFollower:
                 coin=coin, direction="SHORT",
                 entry=close, suggested_stop=stop, suggested_tp1=tp1, suggested_tp2=tp2,
                 confidence=conf,
-                reason=f"[{tf}] Pullback to EMA{cfg.EMA_FAST}, death cross, ADX={last_adx:.1f}",
+                reason=f"[{tf}] EMA{cfg.EMA_FAST} death cross, ADX={last_adx:.1f}",
                 source=self.name, atr=last_atr, adx=last_adx, extra={"vol_ok": vol_ok, "tf": tf},
             ))
 

@@ -59,42 +59,27 @@ class BreakoutGenerator:
 
         signals = []
 
-        # Pullback (retest) entry — only fire if a recent breakout happened AND
-        # current price has pulled back close to the breakout level.
-        # Avoids chasing the initial breakout candle (often a fake-out).
-        max_pullback = cfg.PULLBACK_MAX_DISTANCE_ATR * last_atr
-
-        # LONG retest: in last 5 bars there was a close above prev_high,
-        # and current price is back near that level (within max_pullback above it).
-        recent_highs = df["close"].iloc[-6:-1]
-        broke_high_recently = (recent_highs > prev_high).any()
-        near_breakout_high = (close > prev_high) and (close - prev_high <= max_pullback)
-
-        if broke_high_recently and near_breakout_high and vol_confirmed:
+        if close > prev_high and vol_confirmed:
             stop = prev_high - cfg.ATR_STOP_MULTIPLIER * last_atr
             tp1 = close + cfg.TP1_R * (close - stop)
             tp2 = close + cfg.TP2_R * (close - stop)
             signals.append(Signal(
                 coin=coin, direction="LONG",
                 entry=close, suggested_stop=stop, suggested_tp1=tp1, suggested_tp2=tp2,
-                confidence=0.7,
-                reason=f"Retest of {BREAKOUT_PERIOD}-bar high {prev_high:.4f} with {VOLUME_MULTIPLIER}x volume",
+                confidence=0.65,
+                reason=f"Breakout above {BREAKOUT_PERIOD}-bar high {prev_high:.4f}",
                 source=self.name, atr=last_atr,
             ))
 
-        recent_lows = df["close"].iloc[-6:-1]
-        broke_low_recently = (recent_lows < prev_low).any()
-        near_breakout_low = (close < prev_low) and (prev_low - close <= max_pullback)
-
-        if broke_low_recently and near_breakout_low and vol_confirmed:
+        if close < prev_low and vol_confirmed:
             stop = prev_low + cfg.ATR_STOP_MULTIPLIER * last_atr
             tp1 = close - cfg.TP1_R * (stop - close)
             tp2 = close - cfg.TP2_R * (stop - close)
             signals.append(Signal(
                 coin=coin, direction="SHORT",
                 entry=close, suggested_stop=stop, suggested_tp1=tp1, suggested_tp2=tp2,
-                confidence=0.7,
-                reason=f"Retest of {BREAKOUT_PERIOD}-bar low {prev_low:.4f} with {VOLUME_MULTIPLIER}x volume",
+                confidence=0.65,
+                reason=f"Breakout below {BREAKOUT_PERIOD}-bar low {prev_low:.4f}",
                 source=self.name, atr=last_atr,
             ))
 

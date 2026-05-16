@@ -57,9 +57,15 @@ BATCH_SYSTEM_PROMPT = """Ти досвідчений risk manager криптоф
 - Який найкраще відповідає BTC тренду?
 - Який має найкращий досвід (уроки з минулих угод)?
 
+ВИЗНАЧЕННЯ РЕЖИМУ (КРИТИЧНО — використовуй breadth + BTC 1h, НЕ тільки 4h):
+- Market breadth >55% І BTC 1h bullish → bull_trend
+- Market breadth <35% АБО BTC 1h bearish → bear_trend
+- 4h тренд ЗАПІЗНЮЄТЬСЯ — не покладайся тільки на нього
+
 ПРАВИЛА:
-- Якщо BTC bear → всі LONG отримують penalty, SHORT — бонус
-- Якщо BTC bull → навпаки
+- bear_trend (breadth<35%) → SHORT отримують пріоритет, LONG → skip або reduced
+- bull_trend (breadth>55%) → LONG пріоритет, SHORT → skip
+- НЕ відхиляй SHORT через "4h ще бичачий" якщо breadth низька і BTC 1h падає
 - Не більше 2 однонапрямкових позицій одночасно
 - ADX < 15 → skip, ADX 15-18 → reduced, ADX > 18 → розглядай
 - Panic режим → тільки skip
@@ -226,6 +232,21 @@ def build_batch_context(
     df_btc_4h = price_cache.get("BTC/USDT", {}).get("4h")
     btc_1h_chg = _hourly_change(df_btc_1h)
     btc_4h_trend = _simple_trend(df_btc_4h)
+    btc_1h_trend = _simple_trend(df_btc_1h)
+
+    # Market breadth — % of coins above their EMA50 (1h)
+    from src.indicators import ema as _ema_ind
+    _up, _total = 0, 0
+    for _c, _tfs in price_cache.items():
+        _df = _tfs.get("1h")
+        if _df is not None and len(_df) >= 50:
+            try:
+                if _df["close"].iloc[-1] > _ema_ind(_df, 50).iloc[-1]:
+                    _up += 1
+                _total += 1
+            except Exception:
+                pass
+    breadth_pct = (_up / _total * 100) if _total else 0
 
     open_positions = portfolio_state.get("open_positions", 0)
     loss_streak = portfolio_state.get("loss_streak", 0)
@@ -265,7 +286,8 @@ def build_batch_context(
 
     return f"""РИНКОВИЙ КОНТЕКСТ:
 - BTC 1h зміна: {btc_1h_chg:+.2f}%
-- BTC 4h тренд: {btc_4h_trend}
+- BTC тренд: 1h={btc_1h_trend} | 4h={btc_4h_trend}
+- Market breadth: {breadth_pct:.0f}% монет вище EMA50 (>55%=бичачий, <35%=ведмежий)
 - Відкриті позиції: {open_positions} | LONG: {open_by_dir.get('LONG',0)} SHORT: {open_by_dir.get('SHORT',0)}
 - Drawdown сьогодні: {drawdown_today*100:.1f}%
 - Loss streak: {loss_streak}
