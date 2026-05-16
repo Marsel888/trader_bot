@@ -37,12 +37,18 @@ class TrendFollower:
         df_1d: pd.DataFrame,
     ) -> list[Signal]:
         try:
-            return self._run(coin, df_4h)
+            # 4h = primary (slower, higher quality). 1h = faster, catches bear moves
+            # before 4h EMAs cross. 4h takes priority on direction conflicts.
+            sigs_4h = self._run(coin, df_4h, "4h")
+            sigs_1h = self._run(coin, df_1h, "1h")
+            dirs_4h = {s.direction for s in sigs_4h}
+            merged = sigs_4h + [s for s in sigs_1h if s.direction not in dirs_4h]
+            return merged
         except Exception as e:
             logger.warning(f"trend_follower | {coin}: {e}")
             return []
 
-    def _run(self, coin: str, df: pd.DataFrame) -> list[Signal]:
+    def _run(self, coin: str, df: pd.DataFrame, tf: str = "4h") -> list[Signal]:
         if len(df) < cfg.EMA_SLOW + 10:
             return []
 
@@ -80,7 +86,7 @@ class TrendFollower:
         adx_min = 15 if cfg.TEST_SIGNALS else cfg.ADX_THRESHOLD
 
         logger.debug(
-            f"trend | {coin} | EMA{cfg.EMA_FAST}={curr_fast:.2f} EMA{cfg.EMA_SLOW}={curr_slow:.2f} "
+            f"trend | {coin} [{tf}] | EMA{cfg.EMA_FAST}={curr_fast:.2f} EMA{cfg.EMA_SLOW}={curr_slow:.2f} "
             f"gap={gap_pct:+.2f}% ADX={last_adx:.1f} "
             f"{'🔀SIGNAL!' if golden_cross or death_cross else 'no signal'}"
             f"{' [TEST]' if cfg.TEST_SIGNALS else ''}"
@@ -96,7 +102,7 @@ class TrendFollower:
 
         if not is_pullback_zone:
             logger.debug(
-                f"trend | {coin} | distance to EMA{cfg.EMA_FAST}={distance_to_ema:.4f} "
+                f"trend | {coin} [{tf}] | distance to EMA{cfg.EMA_FAST}={distance_to_ema:.4f} "
                 f"> {max_distance:.4f} ({cfg.PULLBACK_MAX_DISTANCE_ATR}×ATR) — extended, skip"
             )
             return []
@@ -110,8 +116,8 @@ class TrendFollower:
                 coin=coin, direction="LONG",
                 entry=close, suggested_stop=stop, suggested_tp1=tp1, suggested_tp2=tp2,
                 confidence=conf,
-                reason=f"Pullback to EMA{cfg.EMA_FAST}, golden cross, ADX={last_adx:.1f}",
-                source=self.name, atr=last_atr, adx=last_adx, extra={"vol_ok": vol_ok},
+                reason=f"[{tf}] Pullback to EMA{cfg.EMA_FAST}, golden cross, ADX={last_adx:.1f}",
+                source=self.name, atr=last_atr, adx=last_adx, extra={"vol_ok": vol_ok, "tf": tf},
             ))
 
         if death_cross and last_adx >= adx_min and last_dmn > last_dmp:
@@ -123,8 +129,8 @@ class TrendFollower:
                 coin=coin, direction="SHORT",
                 entry=close, suggested_stop=stop, suggested_tp1=tp1, suggested_tp2=tp2,
                 confidence=conf,
-                reason=f"Pullback to EMA{cfg.EMA_FAST}, death cross, ADX={last_adx:.1f}",
-                source=self.name, atr=last_atr, adx=last_adx, extra={"vol_ok": vol_ok},
+                reason=f"[{tf}] Pullback to EMA{cfg.EMA_FAST}, death cross, ADX={last_adx:.1f}",
+                source=self.name, atr=last_atr, adx=last_adx, extra={"vol_ok": vol_ok, "tf": tf},
             ))
 
         return signals

@@ -101,7 +101,7 @@ class Config:
     EARLY_BREAKEVEN_R = 0.5
 
     # Pullback entry — distance to key level (EMA50 / breakout) in ATR units
-    PULLBACK_MAX_DISTANCE_ATR = 1.0   # entry must be within 1×ATR of trigger level
+    PULLBACK_MAX_DISTANCE_ATR = 2.5   # entry must be within 2.5×ATR of trigger level
 
     # Time-of-day filter — UTC hours when bot SKIPS new entries (low-liquidity Asian session)
     SKIP_HOURS_UTC = {0, 1, 2, 3, 4, 5}
