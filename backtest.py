@@ -229,11 +229,129 @@ def _report(trades: list[dict], interval: str, candles: int):
     print()
 
 
+# ── Grid trading simulation ─────────────────────────────────────────
+
+GRID_BAND = 0.30      # grid spans ±30% around the start price
+GRID_LEVELS = 20      # number of grid steps
+GRID_CAPITAL = 1000.0 # capital allocated per coin
+GRID_FEE = 0.0005     # 0.05% taker fee per fill
+
+
+def simulate_grid_coin(df: pd.DataFrame) -> dict:
+    """
+    Classic long-only grid: buy at each level below price, sell one step up.
+    Returns realized profit, unrealized PnL on the open bag, and equity curve.
+    """
+    start = float(df["close"].iloc[0])
+    low = start * (1 - GRID_BAND)
+    high = start * (1 + GRID_BAND)
+    spacing = (high - low) / GRID_LEVELS
+    grid = [low + k * spacing for k in range(GRID_LEVELS + 1)]
+    per_level = GRID_CAPITAL / GRID_LEVELS
+
+    held: dict[float, float] = {}   # level price -> quantity bought
+    realized = 0.0
+    fees = 0.0
+    prev = start
+    curve: list[float] = []
+
+    for i in range(1, len(df)):
+        price = float(df["close"].iloc[i])
+        # Buy — price crossed DOWN through an unowned level
+        for lvl in grid:
+            if lvl not in held and price <= lvl < prev:
+                qty = per_level / lvl
+                held[lvl] = qty
+                fees += per_level * GRID_FEE
+        # Sell — price reached one spacing above a held level
+        for lvl in list(held):
+            if price >= lvl + spacing:
+                qty = held.pop(lvl)
+                realized += qty * spacing
+                fees += qty * (lvl + spacing) * GRID_FEE
+        prev = price
+        unreal = sum(q * (price - l) for l, q in held.items())
+        curve.append(realized - fees + unreal)
+
+    final = float(df["close"].iloc[-1])
+    unrealized = sum(q * (final - l) for l, q in held.items())
+    return {
+        "realized": realized - fees,
+        "unrealized": unrealized,
+        "total": realized - fees + unrealized,
+        "curve": curve,
+        "bag_units": len(held),
+    }
+
+
+def _grid_report(results: dict, interval: str, candles: int):
+    if not results:
+        print("\nЖодних даних.")
+        return
+
+    n = len(results)
+    invested = n * GRID_CAPITAL
+    total_realized = sum(r["realized"] for r in results.values())
+    total_unreal = sum(r["unrealized"] for r in results.values())
+    total = sum(r["total"] for r in results.values())
+    total_pct = total / invested * 100
+
+    # Combined equity curve (sum across coins, aligned to shortest)
+    min_len = min(len(r["curve"]) for r in results.values())
+    combined = [sum(r["curve"][i] for r in results.values()) for i in range(min_len)]
+    peak, max_dd = (combined[0] if combined else 0.0), 0.0
+    for v in combined:
+        peak = max(peak, v)
+        max_dd = max(max_dd, peak - v)
+    max_dd_pct = max_dd / invested * 100
+
+    losers = sum(1 for r in results.values() if r["total"] < 0)
+
+    print("\n" + "=" * 56)
+    print(f"  GRID BACKTEST — {interval}, ~{candles} свічок, {n} монет")
+    print("=" * 56)
+    print(f"  Вкладено капіталу:   ${invested:,.0f}")
+    print(f"  Realized (флет):     ${total_realized:+,.0f}  ← збір на коливаннях")
+    print(f"  Unrealized (мішок):  ${total_unreal:+,.0f}  ← незакриті позиції")
+    print(f"  ПІДСУМОК:            ${total:+,.0f}  ({total_pct:+.1f}%)")
+    print(f"  Max drawdown:        ${max_dd:,.0f}  ({max_dd_pct:.1f}%)")
+    print(f"  Монет у мінусі:      {losers}/{n}")
+    print("=" * 56)
+    print("\n  ВИСНОВОК:")
+    if total > 0 and max_dd_pct < 15:
+        print("  ✅ Грід спрацював на цьому періоді.")
+    else:
+        print("  ❌ Грід: realized-профіт з'їдений 'мішком' незакритих позицій.")
+        print("     Класична загибель гріда — тренд пробиває сітку.")
+    print()
+
+
 async def run_backtest(interval: str, candles: int, setup: str):
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
     print(f"Сетап: {setup} | Історія: {len(cfg.WATCHLIST)} монет × {candles} свічок ({interval})...")
+
+    # ── Grid mode — different simulation, different report ──────────
+    if setup == "grid":
+        grid_results: dict = {}
+        async with httpx.AsyncClient(timeout=60) as client:
+            for n, coin in enumerate(cfg.WATCHLIST, 1):
+                symbol = FUTURES_SYMBOL_OVERRIDE.get(coin, coin.replace("/", ""))
+                try:
+                    df = await fetch_history(client, symbol, interval, candles)
+                except Exception as e:
+                    print(f"  ⚠️  {coin}: помилка завантаження — {e}")
+                    continue
+                if len(df) < 100:
+                    continue
+                res = simulate_grid_coin(df)
+                grid_results[coin] = res
+                print(f"  [{n:2}/{len(cfg.WATCHLIST)}] {coin:12} — "
+                      f"realized ${res['realized']:+.0f} | мішок ${res['unrealized']:+.0f} | "
+                      f"разом ${res['total']:+.0f}")
+        _grid_report(grid_results, interval, candles)
+        return
 
     all_trades: list[dict] = []
     async with httpx.AsyncClient(timeout=60) as client:
