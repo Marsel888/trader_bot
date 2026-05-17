@@ -5,8 +5,9 @@ Tests the RAW signal edge (trend_follower + breakout) WITHOUT AI agents.
 If raw signals have no edge, no AI filter can fix it.
 
 Usage:
-    python backtest.py                 # default: 3000 1h candles (~125 days)
-    python backtest.py 1h 4000         # custom interval + candle count
+    python backtest.py                      # default setup (trend+breakout), 3000 1h candles
+    python backtest.py 1h 3000 squeeze      # test the squeeze-breakout setup
+    python backtest.py 1h 3000 trend        # test trend_follower + breakout (old)
 
 Output: win rate, avg R, profit factor, max drawdown, per-direction breakdown.
 """
@@ -20,6 +21,7 @@ from src.config import cfg
 from src.indicators import atr as _atr
 from src.signals.trend_follower import TrendFollower
 from src.signals.breakout import BreakoutGenerator
+from src.signals.squeeze_breakout import SqueezeBreakout
 from src.data.price_collector import FUTURES_SYMBOL_OVERRIDE, BINANCE_KLINES_URL
 
 # Force REAL signal mode — no TEST spam
@@ -71,10 +73,16 @@ def _close_trade(pos: dict, exit_price: float, exit_idx: int, reason: str) -> di
     }
 
 
-def simulate_coin(coin: str, df: pd.DataFrame) -> list[dict]:
+def _make_signals(setup: str, coin: str, df_slice: pd.DataFrame) -> list:
+    """Run the chosen setup's signal generators on a data slice."""
+    if setup == "squeeze":
+        return SqueezeBreakout()._run(coin, df_slice)
+    # default: trend + breakout
+    return TrendFollower()._run(coin, df_slice, "1h") + BreakoutGenerator()._run(coin, df_slice)
+
+
+def simulate_coin(coin: str, df: pd.DataFrame, setup: str = "trend") -> list[dict]:
     """Walk bar by bar, generate signals, simulate one position at a time."""
-    tf_gen = TrendFollower()
-    bo_gen = BreakoutGenerator()
     atr_series = _atr(df, cfg.ATR_PERIOD)
 
     closed: list[dict] = []
@@ -137,7 +145,7 @@ def simulate_coin(coin: str, df: pd.DataFrame) -> list[dict]:
         if pos is None:
             df_slice = df.iloc[: i + 1]
             try:
-                sigs = tf_gen._run(coin, df_slice, "1h") + bo_gen._run(coin, df_slice)
+                sigs = _make_signals(setup, coin, df_slice)
             except Exception:
                 sigs = []
             if sigs:
@@ -221,11 +229,11 @@ def _report(trades: list[dict], interval: str, candles: int):
     print()
 
 
-async def run_backtest(interval: str, candles: int):
+async def run_backtest(interval: str, candles: int, setup: str):
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
-    print(f"Завантаження історії: {len(cfg.WATCHLIST)} монет × {candles} свічок ({interval})...")
+    print(f"Сетап: {setup} | Історія: {len(cfg.WATCHLIST)} монет × {candles} свічок ({interval})...")
 
     all_trades: list[dict] = []
     async with httpx.AsyncClient(timeout=60) as client:
@@ -239,7 +247,7 @@ async def run_backtest(interval: str, candles: int):
             if len(df) < WARMUP + 50:
                 print(f"  ⚠️  {coin}: замало даних ({len(df)} свічок)")
                 continue
-            trades = simulate_coin(coin, df)
+            trades = simulate_coin(coin, df, setup)
             all_trades.extend(trades)
             print(f"  [{n:2}/{len(cfg.WATCHLIST)}] {coin:12} — {len(trades):3} угод")
 
@@ -249,4 +257,5 @@ async def run_backtest(interval: str, candles: int):
 if __name__ == "__main__":
     interval = sys.argv[1] if len(sys.argv) > 1 else "1h"
     candles = int(sys.argv[2]) if len(sys.argv) > 2 else 3000
-    asyncio.run(run_backtest(interval, candles))
+    setup = sys.argv[3] if len(sys.argv) > 3 else "trend"
+    asyncio.run(run_backtest(interval, candles, setup))
