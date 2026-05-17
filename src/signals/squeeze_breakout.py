@@ -21,6 +21,10 @@ SQUEEZE_RATIO = 0.7      # recent range must be < 70% of the prior range
 VOL_SPIKE = 1.5          # breakout bar volume vs 20-bar average
 MAX_BOX_ATR = 4.0        # skip if the box is wider than 4×ATR (not a real squeeze)
 
+# False-breakout filters — a real breakout is decisive, not a weak poke
+MIN_CLEAR_ATR = 0.25     # breakout close must clear the box edge by ≥ 0.25×ATR
+MIN_BODY_RATIO = 0.5     # breakout candle body ≥ 50% of its full range (conviction)
+
 
 class SqueezeBreakout:
     name = "squeeze_breakout_v1"
@@ -73,36 +77,49 @@ class SqueezeBreakout:
         if not vol_ok:
             return []
 
+        # Breakout candle conviction — body must dominate the candle
+        o = df["open"].iloc[-1]
+        h = df["high"].iloc[-1]
+        l = df["low"].iloc[-1]
+        candle_range = h - l
+        if candle_range <= 0:
+            return []
+        body_ratio = abs(close - o) / candle_range
+        if body_ratio < MIN_BODY_RATIO:
+            return []
+
         signals = []
 
-        # LONG — breakout bar closes above the box (prev bar was still inside)
+        # LONG — decisive breakout above the box
         if close > box_high and prev_close <= box_high:
-            stop = box_low
-            risk = close - stop
-            if risk > 0:
-                signals.append(Signal(
-                    coin=coin, direction="LONG",
-                    entry=close, suggested_stop=stop,
-                    suggested_tp1=close + cfg.TP1_R * risk,
-                    suggested_tp2=close + cfg.TP2_R * risk,
-                    confidence=0.7,
-                    reason=f"Squeeze breakout above {box_high:.4f} (box {recent_range/last_atr:.1f}×ATR)",
-                    source=self.name, atr=last_atr,
-                ))
+            if close - box_high >= MIN_CLEAR_ATR * last_atr and close > o:
+                stop = box_low
+                risk = close - stop
+                if risk > 0:
+                    signals.append(Signal(
+                        coin=coin, direction="LONG",
+                        entry=close, suggested_stop=stop,
+                        suggested_tp1=close + cfg.TP1_R * risk,
+                        suggested_tp2=close + cfg.TP2_R * risk,
+                        confidence=0.7,
+                        reason=f"Squeeze breakout above {box_high:.4f} (box {recent_range/last_atr:.1f}×ATR)",
+                        source=self.name, atr=last_atr,
+                    ))
 
-        # SHORT — breakout bar closes below the box
+        # SHORT — decisive breakout below the box
         if close < box_low and prev_close >= box_low:
-            stop = box_high
-            risk = stop - close
-            if risk > 0:
-                signals.append(Signal(
-                    coin=coin, direction="SHORT",
-                    entry=close, suggested_stop=stop,
-                    suggested_tp1=close - cfg.TP1_R * risk,
-                    suggested_tp2=close - cfg.TP2_R * risk,
-                    confidence=0.7,
-                    reason=f"Squeeze breakout below {box_low:.4f} (box {recent_range/last_atr:.1f}×ATR)",
-                    source=self.name, atr=last_atr,
-                ))
+            if box_low - close >= MIN_CLEAR_ATR * last_atr and close < o:
+                stop = box_high
+                risk = stop - close
+                if risk > 0:
+                    signals.append(Signal(
+                        coin=coin, direction="SHORT",
+                        entry=close, suggested_stop=stop,
+                        suggested_tp1=close - cfg.TP1_R * risk,
+                        suggested_tp2=close - cfg.TP2_R * risk,
+                        confidence=0.7,
+                        reason=f"Squeeze breakout below {box_low:.4f} (box {recent_range/last_atr:.1f}×ATR)",
+                        source=self.name, atr=last_atr,
+                    ))
 
         return signals
